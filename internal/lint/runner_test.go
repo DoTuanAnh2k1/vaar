@@ -33,6 +33,18 @@ func (r countingRule) Run(lint.Context) ([]lint.Finding, error) {
 	return nil, nil
 }
 
+type rootRecordingRule struct {
+	root *string
+}
+
+func (r rootRecordingRule) ID() string          { return "root-recording" }
+func (r rootRecordingRule) Description() string { return "records the root option" }
+
+func (r rootRecordingRule) Run(ctx lint.Context) ([]lint.Finding, error) {
+	*r.root = ctx.Options.Root
+	return nil, nil
+}
+
 func TestRunnerRuleSelection(t *testing.T) {
 	root := t.TempDir()
 
@@ -177,6 +189,41 @@ func TestRunnerRuleSelectionErrors(t *testing.T) {
 				"extra-blank-line":    0,
 			})
 		})
+	}
+}
+
+func TestRunnerInvalidRuleSelectionBeatsScopeErrors(t *testing.T) {
+	root := t.TempDir()
+	ruleset, _ := testRules()
+	runner := lint.NewRunner(ruleset...)
+
+	_, err := runner.Run(context.Background(), lint.Options{
+		Root:      root,
+		Target:    "missing.env",
+		OnlyRules: []string{"unknown-rule"},
+	})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if got := cli.ExitCode(err); got != cli.ExitInternal {
+		t.Fatalf("unexpected exit code: got %d want %d", got, cli.ExitInternal)
+	}
+	if !strings.Contains(err.Error(), "unknown lint rule \"unknown-rule\"") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunnerDefaultsEmptyRootForRuleContext(t *testing.T) {
+	var gotRoot string
+	runner := lint.NewRunner(rootRecordingRule{root: &gotRoot})
+
+	_, err := runner.Run(context.Background(), lint.Options{})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	if got, want := gotRoot, "."; got != want {
+		t.Fatalf("unexpected ctx.Options.Root: got %q want %q", got, want)
 	}
 }
 
