@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // ErrNotRegularFile indicates that a path does not identify a regular file.
@@ -98,7 +99,10 @@ func openRegularFile(path string) (*os.File, os.FileInfo, error) {
 		return nil, nil, err
 	}
 
-	file, err := os.Open(path)
+	// O_NONBLOCK prevents a TOCTOU replacement with a FIFO from blocking the
+	// process between the pathname check and descriptor validation. Windows
+	// ignores this flag because its file handles are already non-blocking.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, nil, err
 	}
