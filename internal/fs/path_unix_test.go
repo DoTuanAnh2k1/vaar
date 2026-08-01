@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestValidateRegularFileRejectsNonRegular(t *testing.T) {
@@ -35,7 +36,20 @@ func TestReadFileRejectsNonRegular(t *testing.T) {
 		t.Skipf("mkfifo unsupported: %v", err)
 	}
 
-	if _, err := ReadFile(fifo); !errors.Is(err, ErrNotRegularFile) {
-		t.Errorf("ReadFile should reject a FIFO with ErrNotRegularFile, got %v", err)
+	result := make(chan error, 1)
+	go func() {
+		_, err := ReadFile(fifo)
+		result <- err
+	}()
+
+	timer := time.NewTimer(250 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrNotRegularFile) {
+			t.Errorf("ReadFile should reject a FIFO with ErrNotRegularFile, got %v", err)
+		}
+	case <-timer.C:
+		t.Fatal("ReadFile blocked while opening a FIFO")
 	}
 }
