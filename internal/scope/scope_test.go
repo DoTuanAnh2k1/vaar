@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package scope
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -257,6 +258,127 @@ func TestResolveUnreadableTargetPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--target path cannot be read: locked/.env.staging") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateOutputPathDetectsCanonicalInputCollisions(t *testing.T) {
+	root := t.TempDir()
+	withWorkingDir(t, root)
+
+	input := filepath.Join(root, ".env")
+	mustWrite(t, input, "KEY=value\n")
+	selection := Selection{Paths: []string{input}}
+
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{name: "relative input", output: ".env"},
+		{name: "parent traversal", output: filepath.Join("nested", "..", ".env")},
+		{name: "absolute input", output: input},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateOutputPath(selection, tc.output)
+			if err == nil {
+				t.Fatal("expected output/input collision")
+			}
+			want := fmt.Sprintf("cannot write lint output to %q: the path is also a lint input file", tc.output)
+			if err.Error() != want {
+				t.Fatalf("unexpected collision error: got %q want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestValidateOutputPathAllowsDistinctAndMissingOutputPaths(t *testing.T) {
+	root := t.TempDir()
+	withWorkingDir(t, root)
+
+	input := filepath.Join(root, ".env")
+	mustWrite(t, input, "KEY=value\n")
+	selection := Selection{Paths: []string{input}}
+
+	if err := ValidateOutputPath(selection, "lint-report.json"); err != nil {
+		t.Fatalf("distinct output rejected: %v", err)
+	}
+
+	reports := filepath.Join(root, "reports")
+	if err := os.Mkdir(reports, 0o755); err != nil {
+		t.Fatalf("create reports directory failed: %v", err)
+	}
+	if err := ValidateOutputPath(selection, filepath.Join("reports", "lint.json")); err != nil {
+		t.Fatalf("missing output path rejected: %v", err)
+	}
+}
+
+func TestValidateOutputPathDetectsSymlinkCollision(t *testing.T) {
+	root := t.TempDir()
+	withWorkingDir(t, root)
+
+	input := filepath.Join(root, ".env")
+	mustWrite(t, input, "KEY=value\n")
+	alias := filepath.Join(root, "alias.env")
+	if err := os.Symlink(input, alias); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation is unavailable: %v", err)
+		}
+		t.Fatalf("create symlink failed: %v", err)
+	}
+
+	err := ValidateOutputPath(Selection{Paths: []string{input}}, "alias.env")
+	if err == nil {
+		t.Fatal("expected symlink collision")
+	}
+	want := "cannot write lint output to \"alias.env\": the path is also a lint input file"
+	if err.Error() != want {
+		t.Fatalf("unexpected collision error: got %q want %q", err, want)
+	}
+}
+
+func TestValidateOutputPathDetectsCaseInsensitiveCollision(t *testing.T) {
+	root := t.TempDir()
+	withWorkingDir(t, root)
+
+	input := filepath.Join(root, "config.env")
+	mustWrite(t, input, "KEY=value\n")
+	output := filepath.Join(root, "CONFIG.ENV")
+	if _, err := os.Stat(output); err != nil {
+		if os.IsNotExist(err) {
+			t.Skip("test filesystem is case-sensitive")
+		}
+		t.Fatalf("stat case-variant output failed: %v", err)
+	}
+
+	err := ValidateOutputPath(Selection{Paths: []string{input}}, output)
+	if err == nil {
+		t.Fatal("expected case-insensitive collision")
+	}
+	want := fmt.Sprintf("cannot write lint output to %q: the path is also a lint input file", output)
+	if err.Error() != want {
+		t.Fatalf("unexpected collision error: got %q want %q", err, want)
+	}
+}
+
+func TestValidateOutputPathReportsUnresolvableParent(t *testing.T) {
+	root := t.TempDir()
+	withWorkingDir(t, root)
+
+	input := filepath.Join(root, ".env")
+	mustWrite(t, input, "KEY=value\n")
+
+	_, err := os.Stat(filepath.Join(root, "missing"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("expected missing parent fixture: %v", err)
+	}
+
+	err = ValidateOutputPath(Selection{Paths: []string{input}}, filepath.Join("missing", "lint.json"))
+	if err == nil {
+		t.Fatal("expected output-path resolution error")
+	}
+	if want := fmt.Sprintf("resolve output path %q", filepath.Join("missing", "lint.json")); !strings.Contains(err.Error(), want) {
+		t.Fatalf("unexpected output-path error: got %q want substring %q", err, want)
 	}
 }
 
