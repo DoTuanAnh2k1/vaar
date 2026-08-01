@@ -90,22 +90,18 @@ func exactDiffArgs(_ *cobra.Command, args []string) error {
 }
 
 func readDiffFile(path string) ([]byte, error) {
-	if _, err := fs.StatRegularFile(path); err != nil {
+	data, err := fs.ReadFile(path)
+	if err != nil {
 		switch {
 		case errors.Is(err, fs.ErrIsDirectory):
 			return nil, NewToolError(fmt.Sprintf("%s is a directory, expected a dotenv file", path), nil)
-		case errors.Is(err, fs.ErrNotRegular):
+		case errors.Is(err, fs.ErrNotRegularFile):
 			return nil, NewToolError(fmt.Sprintf("%s is not a regular file, expected a dotenv file", path), nil)
 		case errors.Is(err, os.ErrNotExist):
 			return nil, NewToolError(fmt.Sprintf("reading %s: file does not exist", path), nil)
 		default:
 			return nil, NewToolError(fmt.Sprintf("reading %s", path), err)
 		}
-	}
-
-	data, err := fs.ReadFile(path)
-	if err != nil {
-		return nil, NewToolError(fmt.Sprintf("reading %s", path), err)
 	}
 	return data, nil
 }

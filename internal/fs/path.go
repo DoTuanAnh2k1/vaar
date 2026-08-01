@@ -15,6 +15,10 @@ import (
 // ErrNotRegularFile indicates that a path does not identify a regular file.
 var ErrNotRegularFile = errors.New("path is not a regular file")
 
+// ErrIsDirectory identifies the directory case of ErrNotRegularFile so
+// callers can preserve directory-specific error wording.
+var ErrIsDirectory = errors.New("path is a directory")
+
 // ResolvePath returns path as a cleaned absolute path. Relative paths are
 // anchored to root, while an empty root uses the current working directory.
 func ResolvePath(root, path string) (string, error) {
@@ -63,6 +67,9 @@ func ValidateRegularFile(path string) (os.FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%w: %w", ErrNotRegularFile, ErrIsDirectory)
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: %s", ErrNotRegularFile, path)

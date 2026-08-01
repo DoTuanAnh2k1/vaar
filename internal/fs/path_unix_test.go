@@ -14,16 +14,16 @@ import (
 	"testing"
 )
 
-func TestStatRegularFileRejectsNonRegular(t *testing.T) {
+func TestValidateRegularFileRejectsNonRegular(t *testing.T) {
 	dir := t.TempDir()
-	// A FIFO is neither a directory nor a regular file, so StatRegularFile must
-	// reject it with ErrNotRegular (which readDiffFile relies on for its wording).
+	// A FIFO is neither a directory nor a regular file, so
+	// ValidateRegularFile must reject it with ErrNotRegularFile.
 	fifo := filepath.Join(dir, "pipe")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Skipf("mkfifo unsupported: %v", err)
 	}
 
-	if _, err := StatRegularFile(fifo); !errors.Is(err, ErrNotRegular) {
-		t.Errorf("a FIFO should return ErrNotRegular, got %v", err)
+	if _, err := ValidateRegularFile(fifo); !errors.Is(err, ErrNotRegularFile) {
+		t.Errorf("a FIFO should return ErrNotRegularFile, got %v", err)
 	}
 }
